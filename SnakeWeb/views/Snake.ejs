@@ -1,0 +1,351 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="text/javascript" src="/javascripts/jquery-1.7.1.js"></script>
+    <script type="text/javascript" src="/javascripts/jCanvaScript.1.5.18.js"></script>
+    <style>
+        #gameStage{
+            width:1000px;
+            height:600px;
+            background-color: #8B8878;
+        }
+        .levelBtn{
+            width: 100px;
+            height:30px;
+            float:left;
+            margin-left:20px;
+            -webkit-border-radius: 30px;
+            background-color: #0066CC;
+            text-align: center;
+            cursor:pointer;
+        }
+        #levelDiv{
+            position:absolute;
+            margin-left:180px;
+            margin-top:-200px;
+        }
+    </style>
+    <script type="text/javascript">
+
+
+
+
+        //上：38，下：40，左：37，右：39
+        var LEFT = 37,RIGHT = 39,UP = 38,DOWN = 40;
+        //舞台宽
+        var STAGE_WIDTH = 295;
+        //舞台高
+        var STAGE_HEIGHT = 145;
+        //初始蛇长
+        var INIT_SIZE = 6;
+        //蛇身体高,宽
+        var SNAKE_ELEMENT_WIDTH = 5,SNAKE_ELEMENT_HEIGHT = 5;
+        //移动速度
+        var SPEED_LEVEL = [400,200,100,50,25];
+        //监听器
+        var intervalId;
+        //选择的速度
+        var NOW_SPEED = SPEED_LEVEL[2];
+        //颜色
+        var COLOR_ARR = ['#272727','#D200D2	','#007500','#0000C6','#C4C400','#8CEA00','#6C3365',
+        '#743A3A','#7373B9','#FF5809','#2894FF','#CE0000','#003E3E','#A5A552'];
+        var BLUE = "#1C86EE";
+        var RED = "#CD0000";
+        //自己的蛇
+        var snakeObject;
+        //对方的蛇
+        var enemySnakeObject;
+        var foodObject;
+
+        var iosocket = io.connect('http://114.254.105.140:3000');
+        //发送自己的移动状态
+        function sendSnakeDirection(direction){
+            var enemyUser = $("#enemyUserState").html();
+            iosocket.emit("sendEnemyDirection",{'to':enemyUser,'direction':direction});
+        }
+        //键盘事件监听
+        document.onkeydown = KeyPress;
+        //设置键盘事件函数
+        function KeyPress(){
+            var key = KeyPress.arguments[0].keyCode;
+            if(key == LEFT){
+                if(snakeObject.movingDirection != LEFT && snakeObject.movingDirection != RIGHT){
+                    snakeObject.movingDirection = LEFT;
+                    sendSnakeDirection(LEFT);
+                }
+            }else if(key == RIGHT){
+                if(snakeObject.movingDirection != LEFT && snakeObject.movingDirection != RIGHT){
+                    snakeObject.movingDirection = RIGHT;
+                    sendSnakeDirection(RIGHT);
+                }
+            }else if(key == UP){
+                if(snakeObject.movingDirection != UP && snakeObject.movingDirection != DOWN){
+                    snakeObject.movingDirection = UP;
+                    sendSnakeDirection(UP);
+                }
+            }else if(key == DOWN){
+                if(snakeObject.movingDirection != UP && snakeObject.movingDirection != DOWN){
+                    snakeObject.movingDirection = DOWN;
+                    sendSnakeDirection(DOWN);
+                }
+            }
+        }
+
+        function Snake(bornX,bornY,color){
+            var snake = new Object();
+            snake.bodyArr = new Array();
+            snake.bornX = bornX;
+            snake.bornY = bornY;
+            snake.headPosX = snake.bornX;
+            snake.headPosY = snake.bornY;
+            snake.size = INIT_SIZE;
+            snake.movingDirection = RIGHT;
+            snake.color = color;
+            //初始化
+            snake.init = function(){
+                var x = snake.bornX;
+                var y = snake.bornY;
+                for(var i = 0;i<INIT_SIZE;i++){
+                    snake.createOneBody(x,y,snake.color);
+                    x -= SNAKE_ELEMENT_WIDTH;
+                }
+            }
+            //创建一个身体
+            snake.createOneBody = function(createX,createY,color){
+                jc.start("gameStage");
+                jc.rect(createX,createY,SNAKE_ELEMENT_WIDTH,SNAKE_ELEMENT_HEIGHT,color,true).up().queue(function(){
+                    snake.bodyArr.push(this);
+                });
+                snake.size += 1;
+            }
+            //移动
+            snake.move = function(){
+                if(snake.movingDirection == RIGHT){
+                    snake.headPosX = snake.headPosX + SNAKE_ELEMENT_WIDTH;
+                }else if(snake.movingDirection == LEFT){
+                    snake.headPosX = snake.headPosX - SNAKE_ELEMENT_WIDTH;
+                }else if(snake.movingDirection == UP){
+                    snake.headPosY = snake.headPosY - SNAKE_ELEMENT_HEIGHT;
+                }else if(snake.movingDirection == DOWN){
+                    snake.headPosY = snake.headPosY + SNAKE_ELEMENT_HEIGHT;
+                }
+                snake.moveControl();
+                snake.checkHit();
+                snake.eatFood();
+            }
+            //移动控制
+            snake.moveControl = function(){
+                jc.start("gameStage");
+                for(var i = snake.bodyArr.length-1;i>0;i--){
+                    var nextPos = snake.bodyArr[i-1].position();
+                    snake.bodyArr[i].translateTo(nextPos.x,nextPos.y);
+                }
+                snake.bodyArr[0].translateTo(snake.headPosX,snake.headPosY);
+            }
+            //检测碰撞
+            snake.checkHit = function(){
+                if(snakeObject.headPosX > STAGE_WIDTH || snakeObject.headPosX < 0 || snakeObject.headPosY < 0 || snakeObject.headPosY > STAGE_HEIGHT){
+                    clearInterval(intervalId);
+                    sendMyLoseRequest();
+                    alert("你输了");
+                    return ;
+                }
+                var headPos = snakeObject.bodyArr[0].position();
+                for(var i = 1;i<snakeObject.bodyArr.length;i++){
+                    var bodyPos = snakeObject.bodyArr[i].position();
+                    if(headPos.x == bodyPos.x && headPos.y == bodyPos.y){
+                        sendMyLoseRequest();
+                        clearInterval(intervalId);
+                        alert("你输了");
+                        return ;
+                    }
+                }
+                for(var i = 1;i<enemySnakeObject.bodyArr.length;i++){
+                    var bodyPos = enemySnakeObject.bodyArr[i].position();
+                    if(headPos.x == bodyPos.x && headPos.y == bodyPos.y){
+                        sendMyLoseRequest();
+                        clearInterval(intervalId);
+                        alert("你输了");
+                        return ;
+                    }
+                }
+            }
+            //碰撞食物
+            snake.eatFood = function(){
+                var headPos = snake.bodyArr[0].position();
+                var foodPos = foodObject.foodSelf.position();
+                if(foodPos.x == headPos.x && foodPos.y == headPos.y){
+                    var LastBody = snake.bodyArr[snake.bodyArr.length-1].position();
+                    snake.createOneBody(LastBody.x,LastBody.y,snake.color);
+                    deleteFoodRequest();
+                    foodObject.delFood();
+
+                    if(snake == snakeObject){
+                        createFoodRequest();
+                    }
+                }
+            }
+            return snake;
+        }
+        function Food(){
+            var food = new Object();
+            food.widthCount = STAGE_WIDTH/SNAKE_ELEMENT_WIDTH -1;
+            food.heightCount = STAGE_HEIGHT/SNAKE_ELEMENT_HEIGHT -1;
+            food.foodSelf = null;
+            food.color = "";
+            food.createFood = function(x,y){
+                food.color = "#D200D2";
+                jc.start("gameStage");
+                jc.rect(x,y,SNAKE_ELEMENT_WIDTH,SNAKE_ELEMENT_HEIGHT,food.color,true).up().queue(function(){
+                    food.foodSelf = this;
+                });
+            }
+            food.delFood = function(){
+                jc.start("gameStage");
+                food.foodSelf.del();
+            }
+            return food;
+        }
+        function getRandomColor(){
+            var colorIndex = Math.round((Math.random()*1000)%COLOR_ARR.length);
+            return COLOR_ARR[colorIndex-1];
+        }
+        //选择速度开始游戏
+        function initGame(myRole){
+            if(snakeObject != null){
+                for(var i = 0;i<snakeObject.bodyArr.length;i++){
+                    snakeObject.bodyArr[i].del();
+                }
+            }
+            if(enemySnakeObject != null){
+                for(var i = 0;i<enemySnakeObject.bodyArr.length;i++){
+                    enemySnakeObject.bodyArr[i].del();
+                }
+            }
+            NOW_SPEED = SPEED_LEVEL[2];
+            if(myRole == 0){
+                snakeObject = new Snake(80,40,BLUE);
+                snakeObject.init();
+                enemySnakeObject = new Snake(40,70,RED);
+                enemySnakeObject.init();
+                intervalId = setInterval(function(){
+                    snakeObject.move();
+                    enemySnakeObject.move();
+                },NOW_SPEED);
+
+            }else{
+                snakeObject = new Snake(40,70,RED);
+                snakeObject.init();
+                enemySnakeObject = new Snake(80,40,BLUE);
+                enemySnakeObject.init();
+                intervalId = setInterval(function(){
+                    enemySnakeObject.move();
+                    snakeObject.move();
+
+                },NOW_SPEED);
+            }
+            if(foodObject != null){
+              foodObject.delFood();
+              foodObject = null;
+            }
+            foodObject = new Food();
+            createFoodRequest();
+
+        }
+        function enemyDirection(direction){
+            enemySnakeObject.movingDirection = direction;
+        }
+
+        iosocket.on('connect', function () {
+            //接收到对方上线
+            iosocket.on('living',function(msg){
+                $("#enemyUserState").html(msg);
+            });
+            //接收到对方下线
+            iosocket.on('offline',function(){
+                $("#enemyUserState").html("对方已断开");
+            });
+            //接收到游戏邀请
+            iosocket.on('beginRequest',function(fromUser){
+                //同意并开始游戏
+                if(confirm(fromUser+"向你发起挑战")){
+                    iosocket.emit('beginGame',fromUser);
+                    initGame(0);
+                }
+            });
+            //接收对方的移动状态
+            iosocket.on('enemyDirection',function(direction){
+                enemyDirection(direction);
+            });
+            //对方接受请求，开始游戏
+            iosocket.on('beginGame', function(msg) {
+                if(msg == "1"){
+                    initGame(1);
+                }
+            });
+            iosocket.on('createFoodResponse',function(data){
+                var foodInfo = eval(data);
+                foodObject.createFood(foodInfo.x,foodInfo.y);
+            });
+            iosocket.on('deleteFoodResponse',function(msg){
+                if(msg == 1 ){
+                    foodObject.delFood();
+                }
+            });
+            iosocket.on('sendMyLoseResponse',function(msg){
+                if(msg == 1){
+                    clearInterval(intervalId);
+                    alert("你赢了");
+                }
+            });
+        });
+        //设置名称，发送连接状态
+        function setNameAndReady(){
+          var userName = $("#userName").val();
+          if(userName == ""){
+              alert("请填写用户名");
+              return flase;
+          }else{
+              iosocket.emit("setNameAndReady",userName);
+              $("#userName").attr("readonly","readonly");
+              $("#setReady").attr("disabled","disabled");
+              $("#myState").html("你已经连接");
+          }
+        }
+        //发送开始游戏请求
+        function getBegin(){
+            var userName = $("#userName").val();
+            var enemyName = $("#enemyUserState").html();
+            iosocket.emit("getBegin",{'from':userName,'to':enemyName});
+        }
+        //创建食物请求
+        function createFoodRequest(){
+            var username = $("#userName").val();
+            var enemy = $("#enemyUserState").html();
+            iosocket.emit("createFoodRequest",{'one':username,'two':enemy});
+        }
+        //删除食物请求
+        function deleteFoodRequest(){
+            var enemy = $("#enemyUserState").html();
+            iosocket.emit("deleteFoodRequest",enemy);
+        }
+        //发送失败请求
+        function sendMyLoseRequest(){
+            var enemy = $("#enemyUserState").html();
+            iosocket.emit("sendMyLoseRequest",enemy);
+        }
+function enemyCreateBodyRequest(){
+    var enemy = $("#enemyUserState").html();
+    iosocket.emit("enemyCreateBodyRequest",enemy);
+}
+    </script>
+</head>
+<body>
+    <canvas id="gameStage"></canvas>
+    <input type="text" id="userName">
+    <input type="button" value="连接" onclick="setNameAndReady()" id="setReady"/>
+    <p id="myState"></p>
+    <p id="enemyUserState" onclick="getBegin()" style="cursor:pointer"></p>
+</body>
+</html>

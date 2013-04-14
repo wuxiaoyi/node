@@ -1,0 +1,57 @@
+﻿<script src="/socket.io/socket.io.js"></script>
+<script>
+  $(function(){
+      var iosocket = io.connect();
+      var username = $("#username").html();
+
+      iosocket.on('connect', function () {
+      $('#incomingChatMessages').append($('<li>Connected</li>'));
+
+      //接受信息
+      iosocket.on('message', function(message) {
+        $('#incomingChatMessages').append($('<li></li>').text(message));
+      });
+      //接受用户上线信息
+      iosocket.on('loginUser', function(message) {
+        if($("#onlineUser").find("li").length!=0){
+          var hasExsit = false;
+          for(var i =0;i<$("#onlineUser").find("li").length;i++){
+            if(message==$("#onlineUser").find("li").eq(i).html()){
+              hasExsit = true;
+            }
+          }
+        }
+        if(!hasExsit){
+          $('#onlineUser').append($('<li></li>').text(message));
+        }
+      });
+      //断开连接
+      iosocket.on('disconnect', function() {
+        $('#incomingChatMessages').append('<li>Disconnected</li>');
+      });
+        });
+
+      $('#outgoingChatMessage').keypress(function(event) {
+      if(event.which == 13) {
+      var myWord = username+"    say:  "+$('#outgoingChatMessage').val();
+      event.preventDefault();
+      iosocket.send(myWord);
+        $('#incomingChatMessages').append($('<li></li>').text(myWord));
+        $('#outgoingChatMessage').val('');
+      }
+      });
+    });
+</script>
+<div id="container" class="container">
+         <div class="hero-unit" >
+            <h1>欢迎来到 nodejs</h1>
+            <p>
+                  <a class="btn btn-primary btn-large" href="/login" > 登录</a>
+                  <a class="btn btn-large" href="/reg"> 立即注册</a>
+            </p>
+          </div>
+          
+      <hr />
+      <footer>
+      </footer>
+    </div>
